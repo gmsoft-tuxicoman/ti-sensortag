@@ -8,16 +8,57 @@ import dbus
 import dbus.mainloop.glib
 from gi.repository import GObject
 
+import threading
+
 argparser = argparse.ArgumentParser(description="Monitor the TI sensortag")
-argparser.add_argument('--dev', '-d', dest='dev_addr', help="Device address")
+argparser.add_argument('--dev', '-d', dest='dev_addr', help="Device address", required=True)
 args = argparser.parse_args()
 
 dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
 bus = dbus.SystemBus()
 
 devices = {}
-
 dev_path = ''
+dev_char = {}
+
+monitor = {}
+monitor['humidity_temp'] = True
+
+SENSOR_HUMIDITY_TEMP_CONFIG_UUID = 'f000aa22-0451-4000-b000-000000000000'
+SENSOR_HUMIDITY_TEMP_DATA_UUID = 'f000aa21-0451-4000-b000-000000000000'
+SENSOR_HUMIDITY_TEMP_PERIOD_UUID = 'f000aa23-0451-4000-b000-000000000000'
+
+
+def monitor():
+	threading.Timer(1.0, monitor).start()
+
+	sensor_humidity_temp_read()
+
+def sensor_humidity_temp_config():
+	proxy = dev_char[SENSOR_HUMIDITY_TEMP_CONFIG_UUID]['proxy']
+	val = proxy.ReadValue()
+	print("Value : " + str(val))
+	if val[0] == 0:
+		print("Enabling humidity/temperature sensor")
+		proxy.WriteValue([1])
+
+def sensor_humidity_temp_read():
+	proxy = dev_char[SENSOR_HUMIDITY_TEMP_DATA_UUID]['proxy']
+	val = proxy.ReadValue()
+	tempRaw = val[0] + (val[1] << 8)
+	temp = -40.0 + 165.0/65536 * float(tempRaw)
+	print("Temperature : " + str(temp))
+
+	humidityRaw = val[2] + (val[3] << 8)
+	humidityRaw -= humidityRaw % 4
+	humidity = 100.0/65536 * float(humidityRaw)
+	print("Humidity : " + str(humidity) + "%")
+
+
+sensor_char = {
+	SENSOR_HUMIDITY_TEMP_CONFIG_UUID : sensor_humidity_temp_config,
+	SENSOR_HUMIDITY_TEMP_DATA_UUID : sensor_humidity_temp_read
+}
 
 def find_adapters():
 
@@ -89,7 +130,16 @@ def dev_char_update(objs):
 		if not char['Service'].startswith(dev_path):
 			continue
 
-		print("Found characteristic : " + char['UUID'])
+		uuid = char['UUID']
+
+		print("Found characteristic : " + char['UUID'] + " with path " + obj_path)
+		dev_char[uuid] = {}
+		dev_char[uuid]['path'] = obj_path
+		dev_char[uuid]['proxy'] = dbus.Interface(bus.get_object("org.bluez", obj_path), 'org.bluez.GattCharacteristic1')
+
+		if uuid in sensor_char:
+			sensor_char[uuid]()
+	monitor()
 
 def sig_interface_added(path, interface):
 	find_devices()
