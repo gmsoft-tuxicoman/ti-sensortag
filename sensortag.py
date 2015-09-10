@@ -17,10 +17,7 @@ bus = dbus.SystemBus()
 
 devices = {}
 
-
-def handle_uuids(uuids):
-	for uuid in uuids:
-		print("Found UUID " + uuid)
+dev_path = ''
 
 def find_adapters():
 
@@ -55,22 +52,47 @@ def find_devices():
 			# This is no the droid^Wdevice we are looking for
 			continue
 
+		dev_path = obj_path
+
 		if not obj['org.bluez.Device1']['Connected']:
-			print("Connecting to " + addr)
 			dev_connect(obj_path)
 		else:
-			print("Already connected to " + addr)
-			handle_uuids(obj['org.bluez.Device1']['UUIDs'])
+			print("Already connected connected to " + addr)
+
+		# bluez caches service, it may already know about it
+		if 'GattServices' in obj['org.bluez.Device1']:
+			dev_char_update(objs)
 	return devs
 
 def dev_connect(path):
+	print("Connecting to " + path)
 	dev = dbus.Interface(bus.get_object("org.bluez", path), 'org.bluez.Device1')
 	dev.Connect()
 
+def dev_connected(path):
+	print("Connected !")
+	if not path in objs:
+		print("Could not find device " + path)
+		return
+	obj = objs[path]
+	print(obj)
+
+def dev_char_update(objs):
+	print("Updating device characteristics ...")
+	for obj_path in objs:
+		obj = objs[obj_path]
+		if not 'org.bluez.GattCharacteristic1' in obj:
+			continue
+
+		char = obj['org.bluez.GattCharacteristic1']
+
+		if not char['Service'].startswith(dev_path):
+			continue
+
+		print("Found characteristic : " + char['UUID'])
+
 def sig_interface_added(path, interface):
 	find_devices()
-
-
 
 def sig_interface_removed(path, interface):
 	if path in devices:
@@ -81,20 +103,16 @@ def sig_properties_changed(interface, changed, invalidated, path):
 	if interface != 'org.bluez.Device1':
 		return
 
-	print(str(interface) + " " + str(changed) + " " + str(invalidated) + " " + str(path))
+	# print(str(interface) + " " + str(changed) + " " + str(invalidated) + " " + str(path))
 
 	for prop in changed:
-		print("Property : " + prop)
-
 		if prop == 'Connected':
 			if changed[prop]:
 				print("Connected !")
 			else:
 				print("Disconnected !")
-		elif prop == 'UUIDs':
-			handle_uuids(changed[prop])
-
-
+		elif prop == 'GattServices':
+			dev_char_update(obj_mgr.GetManagedObjects())
 
 
 
