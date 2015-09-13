@@ -1,8 +1,7 @@
 #!/usr/bin/python3
 
-
-
 import argparse
+import sys, os
 
 import dbus
 import dbus.mainloop.glib
@@ -17,33 +16,44 @@ args = argparser.parse_args()
 dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
 bus = dbus.SystemBus()
 
+adapt = {}
 devices = {}
 dev_path = ''
 dev_char = {}
 
-monitor = {}
-monitor['humidity_temp'] = True
-
-SENSOR_HUMIDITY_TEMP_CONFIG_UUID = 'f000aa22-0451-4000-b000-000000000000'
-SENSOR_HUMIDITY_TEMP_DATA_UUID = 'f000aa21-0451-4000-b000-000000000000'
-SENSOR_HUMIDITY_TEMP_PERIOD_UUID = 'f000aa23-0451-4000-b000-000000000000'
-
 
 def monitor():
-	threading.Timer(1.0, monitor).start()
 
-	sensor_humidity_temp_read()
+	threading.Timer(2.0, monitor).start()
+	for s in sensors:
+		sensor = sensors[s]
+		if not sensor['monitor']:
+			continue
 
-def sensor_humidity_temp_config():
-	proxy = dev_char[SENSOR_HUMIDITY_TEMP_CONFIG_UUID]['proxy']
-	val = proxy.ReadValue()
-	print("Value : " + str(val))
-	if val[0] == 0:
-		print("Enabling humidity/temperature sensor")
-		proxy.WriteValue([1])
+		# Enable the sensor if not done
+		if not sensor['enabled']:
+			proxy = dev_char[sensor['config_uuid']]['proxy']
+			try:
+				val = proxy.ReadValue()
+			except dbus.exceptions.DBusException as e:
+				print("Unable to read sensor config : " + str(e))
+				return
+
+			print("Value : " + str(val))
+			if val[0] == 0:
+				print("Enabling " + sensor['name'] + " sensor")
+				proxy.WriteValue([1])
+				sensor['enabled'] = True
+				# We'll read the value at the next interval, give some time to the sensor to start
+				return
+
+		# Read the value
+		sensor_humidity_temp_read()
+
+
 
 def sensor_humidity_temp_read():
-	proxy = dev_char[SENSOR_HUMIDITY_TEMP_DATA_UUID]['proxy']
+	proxy = dev_char['f000aa21-0451-4000-b000-000000000000']['proxy']
 	val = proxy.ReadValue()
 	tempRaw = val[0] + (val[1] << 8)
 	temp = -40.0 + 165.0/65536 * float(tempRaw)
@@ -55,10 +65,14 @@ def sensor_humidity_temp_read():
 	print("Humidity : " + str(humidity) + "%")
 
 
-sensor_char = {
-	SENSOR_HUMIDITY_TEMP_CONFIG_UUID : sensor_humidity_temp_config,
-	SENSOR_HUMIDITY_TEMP_DATA_UUID : sensor_humidity_temp_read
-}
+sensors = {}
+sensors['humidity_temp'] = {
+	'name' : 'humidity/temperature',
+	'monitor': True,
+	'enabled': False,
+	'config_uuid': 'f000aa22-0451-4000-b000-000000000000',
+	'data_uuid' : 'f000aa21-0451-4000-b000-000000000000',
+	'read_func' : sensor_humidity_temp_read }
 
 def find_adapters():
 
@@ -93,22 +107,29 @@ def find_devices():
 			# This is no the droid^Wdevice we are looking for
 			continue
 
+		global dev_path
 		dev_path = obj_path
 
+		adapt.StopDiscovery()
+
 		if not obj['org.bluez.Device1']['Connected']:
-			dev_connect(obj_path)
+			dev_connect()
 		else:
 			print("Already connected connected to " + addr)
-
-		# bluez caches service, it may already know about it
-		if 'GattServices' in obj['org.bluez.Device1']:
 			dev_char_update(objs)
+
 	return devs
 
-def dev_connect(path):
-	print("Connecting to " + path)
-	dev = dbus.Interface(bus.get_object("org.bluez", path), 'org.bluez.Device1')
+def dev_connect():
+	print("Connecting to " + dev_path + " ...")
+	dev = dbus.Interface(bus.get_object("org.bluez", dev_path), 'org.bluez.Device1')
 	dev.Connect()
+
+def dev_disconnect():
+	if len(dev_path) > 0:
+		print("Disconnecting from " + dev_path)
+		dev = dbus.Interface(bus.get_object("org.bluez", dev_path), 'org.bluez.Device1')
+		dev.Disconnect()
 
 def dev_connected(path):
 	print("Connected !")
@@ -137,8 +158,6 @@ def dev_char_update(objs):
 		dev_char[uuid]['path'] = obj_path
 		dev_char[uuid]['proxy'] = dbus.Interface(bus.get_object("org.bluez", obj_path), 'org.bluez.GattCharacteristic1')
 
-		if uuid in sensor_char:
-			sensor_char[uuid]()
 	monitor()
 
 def sig_interface_added(path, interface):
@@ -153,21 +172,24 @@ def sig_properties_changed(interface, changed, invalidated, path):
 	if interface != 'org.bluez.Device1':
 		return
 
-	# print(str(interface) + " " + str(changed) + " " + str(invalidated) + " " + str(path))
+	print(str(interface) + " " + str(changed) + " " + str(invalidated) + " " + str(path))
 
 	for prop in changed:
 		if prop == 'Connected':
 			if changed[prop]:
 				print("Connected !")
+				dev_char_update(obj_mgr.GetManagedObjects())
 			else:
 				print("Disconnected !")
+
+		elif prop == 'Name':
+			print("Connected to " + changed[prop])
 		elif prop == 'GattServices':
 			dev_char_update(obj_mgr.GetManagedObjects())
 
 
 
-if __name__ == '__main__':
-
+def main():
 	global obj_mgr
 	obj_mgr = dbus.Interface(bus.get_object("org.bluez", "/"), 'org.freedesktop.DBus.ObjectManager')
 
@@ -192,11 +214,22 @@ if __name__ == '__main__':
 	bus.add_signal_receiver(sig_interface_removed, dbus_interface='org.freedesktop.DBus.ObjectManager', signal_name = "InterfacesRemoved")
 	bus.add_signal_receiver(sig_properties_changed, dbus_interface='org.freedesktop.DBus.Properties', signal_name = "PropertiesChanged", arg0 = "org.bluez.Device1", path_keyword = "path")
 
+	global adapt
 	adapt = dbus.Interface(bus.get_object("org.bluez", adapt_path), "org.bluez.Adapter1")
 
-	find_devices()
 	adapt.StartDiscovery()
+	find_devices()
 
 	mainloop = GObject.MainLoop()
 	mainloop.run()
 
+if __name__ == '__main__':
+	try:
+		main()
+	except KeyboardInterrupt:
+		print('Interrupted')
+		dev_disconnect()
+		try:
+			sys.exit(0)
+		except SystemExit:
+			os._exit(0)
