@@ -27,25 +27,37 @@ def monitor():
 	threading.Timer(2.0, monitor).start()
 	for s in sensors:
 		sensor = sensors[s]
-		if not sensor['monitor']:
-			continue
 
-		# Enable the sensor if not done
-		if not sensor['enabled']:
-			proxy = dev_char[sensor['config_uuid']]['proxy']
+		config_proxy = dev_char[sensor['config_uuid']]['proxy']
+		if not 'enabled' in sensor:
+			# Fetch the state of the sensor
 			try:
-				val = proxy.ReadValue()
+				val = config_proxy.ReadValue()
 			except dbus.exceptions.DBusException as e:
 				print("Unable to read sensor config : " + str(e))
 				return
-
-			print("Value : " + str(val))
-			if val[0] == 0:
-				print("Enabling " + sensor['name'] + " sensor")
-				proxy.WriteValue([1])
+			if val[0] > 0:
 				sensor['enabled'] = True
-				# We'll read the value at the next interval, give some time to the sensor to start
-				continue
+			else:
+				sensor['enabled'] = False
+
+		if sensor['monitor'] != sensor['enabled']:
+			# Make sure the sensor is enabled/disabled
+			if sensor['monitor']:
+				print("Enabling " + sensor['name'] + " sensor")
+				val = True
+			else:
+				print("Disabling " + sensor['name'] + " sensor")
+				val = False
+			config_proxy.WriteValue([val])
+			sensor['enabled'] = val
+
+			# Give some time to the firmware to fetch the new value
+			continue
+
+		if not sensor['monitor']:
+			continue
+
 		# Read the value
 		sensor['read_func'](sensor['data_uuid'])
 
@@ -76,7 +88,6 @@ sensors = {}
 sensors['humidity_temp'] = {
 	'name' : 'humidity/temperature',
 	'monitor': True,
-	'enabled': False,
 	'config_uuid': 'f000aa22-0451-4000-b000-000000000000',
 	'data_uuid' : 'f000aa21-0451-4000-b000-000000000000',
 	'read_func' : sensor_humidity_temp_read }
@@ -84,7 +95,6 @@ sensors['humidity_temp'] = {
 sensors['luxometer'] = {
 	'name' : 'luxometer',
 	'monitor': True,
-	'enabled': False,
 	'config_uuid': 'f000aa72-0451-4000-b000-000000000000',
 	'data_uuid' : 'f000aa71-0451-4000-b000-000000000000',
 	'read_func' : sensor_luxometer_read }
