@@ -67,11 +67,10 @@ def sensor_luxometer_read(uuid):
 	proxy = dev_char[uuid]['proxy']
 	val = proxy.ReadValue()
 	lightRaw = val[0] + (val[1] << 8)
-	print("lightRaw " + str(lightRaw))
 	m = lightRaw & 0x0FFF
 	e = (lightRaw & 0xF000) >> 12
-	val = m * (0.01 * pow(2.0,e))
-	print("Luxometer : " + str(val) + " lux")
+	lux = m * (0.01 * pow(2.0,e))
+	print("Luxometer : " + str(lux) + " lux")
 
 sensors = {}
 sensors['humidity_temp'] = {
