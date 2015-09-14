@@ -45,15 +45,14 @@ def monitor():
 				proxy.WriteValue([1])
 				sensor['enabled'] = True
 				# We'll read the value at the next interval, give some time to the sensor to start
-				return
-
+				continue
 		# Read the value
-		sensor_humidity_temp_read()
+		sensor['read_func'](sensor['data_uuid'])
 
 
 
-def sensor_humidity_temp_read():
-	proxy = dev_char['f000aa21-0451-4000-b000-000000000000']['proxy']
+def sensor_humidity_temp_read(uuid):
+	proxy = dev_char[uuid]['proxy']
 	val = proxy.ReadValue()
 	tempRaw = val[0] + (val[1] << 8)
 	temp = -40.0 + 165.0/65536 * float(tempRaw)
@@ -64,6 +63,15 @@ def sensor_humidity_temp_read():
 	humidity = 100.0/65536 * float(humidityRaw)
 	print("Humidity : " + str(humidity) + "%")
 
+def sensor_luxometer_read(uuid):
+	proxy = dev_char[uuid]['proxy']
+	val = proxy.ReadValue()
+	lightRaw = val[0] + (val[1] << 8)
+	print("lightRaw " + str(lightRaw))
+	m = lightRaw & 0x0FFF
+	e = (lightRaw & 0xF000) >> 12
+	val = m * (0.01 * pow(2.0,e))
+	print("Luxometer : " + str(val) + " lux")
 
 sensors = {}
 sensors['humidity_temp'] = {
@@ -73,6 +81,14 @@ sensors['humidity_temp'] = {
 	'config_uuid': 'f000aa22-0451-4000-b000-000000000000',
 	'data_uuid' : 'f000aa21-0451-4000-b000-000000000000',
 	'read_func' : sensor_humidity_temp_read }
+
+sensors['luxometer'] = {
+	'name' : 'luxometer',
+	'monitor': True,
+	'enabled': False,
+	'config_uuid': 'f000aa72-0451-4000-b000-000000000000',
+	'data_uuid' : 'f000aa71-0451-4000-b000-000000000000',
+	'read_func' : sensor_luxometer_read }
 
 def find_adapters():
 
@@ -203,9 +219,9 @@ def main():
 
 	# Power it on
 	if not adapt_obj['Powered']:
+		print("Turning on adapter " + adapt_path)
 		adapt_prop = dbus.Interface(bus.get_object("org.bluez", adapt_path), "org.freedesktop.DBus.Properties")
 		adapt_prop.Set("org.bluez.Adapter1", "Powered", dbus.Boolean(1))
-		print("Turned on adapter " + adapt_path)
 
 
 	# Setup the sig handler
