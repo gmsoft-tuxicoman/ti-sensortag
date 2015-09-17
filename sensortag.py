@@ -3,6 +3,7 @@
 import argparse
 import sys, os
 
+import time
 import dbus
 import dbus.mainloop.glib
 from gi.repository import GObject
@@ -11,6 +12,7 @@ import threading
 
 argparser = argparse.ArgumentParser(description="Monitor the TI sensortag")
 argparser.add_argument('--dev', '-d', dest='dev_addr', help="Device address", required=True)
+argparser.add_argument('-interval', '-i', dest='interval', help='Polling interval in seconds', type=int, default=300)
 args = argparser.parse_args()
 
 dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
@@ -22,46 +24,18 @@ dev_path = ''
 dev_char = {}
 
 
+
 def monitor():
 
-	threading.Timer(2.0, monitor).start()
+	threading.Timer(args.interval, monitor).start()
+
 	for s in sensors:
 		sensor = sensors[s]
 
-		config_proxy = dev_char[sensor['config_uuid']]['proxy']
-		if not 'enabled' in sensor:
-			# Fetch the state of the sensor
-			try:
-				val = config_proxy.ReadValue()
-			except dbus.exceptions.DBusException as e:
-				print("Unable to read sensor config : " + str(e))
-				return
-			if val[0] > 0:
-				sensor['enabled'] = True
-			else:
-				sensor['enabled'] = False
-
-		if sensor['monitor'] != sensor['enabled']:
-			# Make sure the sensor is enabled/disabled
-			if sensor['monitor']:
-				print("Enabling " + sensor['name'] + " sensor")
-				val = True
-			else:
-				print("Disabling " + sensor['name'] + " sensor")
-				val = False
-			config_proxy.WriteValue([val])
-			sensor['enabled'] = val
-
-			# Give some time to the firmware to fetch the new value
-			continue
-
 		if not sensor['monitor']:
 			continue
-
 		# Read the value
 		sensor['read_func'](sensor['data_uuid'])
-
-
 
 def sensor_humidity_temp_read(uuid):
 	proxy = dev_char[uuid]['proxy']
@@ -98,6 +72,47 @@ sensors['luxometer'] = {
 	'config_uuid': 'f000aa72-0451-4000-b000-000000000000',
 	'data_uuid' : 'f000aa71-0451-4000-b000-000000000000',
 	'read_func' : sensor_luxometer_read }
+
+def sensors_init():
+
+	sensors_configured = 0
+	while sensors_configured < len(sensors):
+		for s in sensors:
+			sensor = sensors[s]
+
+			config_proxy = dev_char[sensor['config_uuid']]['proxy']
+			if not 'enabled' in sensor:
+				# Fetch the state of the sensor
+				try:
+					val = config_proxy.ReadValue()
+				except dbus.exceptions.DBusException as e:
+					print("Unable to read sensor config : " + str(e))
+					time.sleep(1)
+					continue
+				if val[0] > 0:
+					sensor['enabled'] = True
+				else:
+					sensor['enabled'] = False
+
+			if sensor['monitor'] != sensor['enabled']:
+				# Make sure the sensor is enabled/disabled
+				if sensor['monitor']:
+					print("Enabling " + sensor['name'] + " sensor")
+					val = True
+				else:
+					print("Disabling " + sensor['name'] + " sensor")
+					val = False
+				config_proxy.WriteValue([val])
+				sensor['enabled'] = val
+
+				# Give some time to the firmware to fetch the new value
+				time.sleep(1)
+				print("Sensor " + sensor['name'] + " configured")
+				sensors_configured += 1
+
+	# Start monitoring
+	print("All sensors configured, starting monitoring ...")
+	monitor()
 
 def find_adapters():
 
@@ -183,7 +198,7 @@ def dev_char_update(objs):
 		dev_char[uuid]['path'] = obj_path
 		dev_char[uuid]['proxy'] = dbus.Interface(bus.get_object("org.bluez", obj_path), 'org.bluez.GattCharacteristic1')
 
-	monitor()
+	sensors_init()
 
 def sig_interface_added(path, interface):
 	find_devices()
