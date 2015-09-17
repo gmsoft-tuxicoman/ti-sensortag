@@ -62,6 +62,7 @@ sensors = {}
 sensors['humidity_temp'] = {
 	'name' : 'humidity/temperature',
 	'monitor': True,
+	'period_uuid' : 'f000aa23-0451-4000-b000-000000000000',
 	'config_uuid': 'f000aa22-0451-4000-b000-000000000000',
 	'data_uuid' : 'f000aa21-0451-4000-b000-000000000000',
 	'read_func' : sensor_humidity_temp_read }
@@ -69,6 +70,7 @@ sensors['humidity_temp'] = {
 sensors['luxometer'] = {
 	'name' : 'luxometer',
 	'monitor': True,
+	'period_uuid' : 'f000aa73-0451-4000-b000-000000000000',
 	'config_uuid': 'f000aa72-0451-4000-b000-000000000000',
 	'data_uuid' : 'f000aa71-0451-4000-b000-000000000000',
 	'read_func' : sensor_luxometer_read }
@@ -105,9 +107,19 @@ def sensors_init():
 				config_proxy.WriteValue([val])
 				sensor['enabled'] = val
 
+
 				# Give some time to the firmware to fetch the new value
 				time.sleep(1)
 				print("Sensor " + sensor['name'] + " configured")
+				if sensor['monitor']:
+					# Update period
+					period_uuid = sensor['period_uuid']
+					period_proxy = dev_char[period_uuid]['proxy']
+					period = args.interval * 100
+					if (period > 255):
+						period = 255
+					print("Updating polling period to " + str(period) + " for " + sensor['name'] + " sensor")
+					period_proxy.WriteValue([period])
 				sensors_configured += 1
 
 	# Start monitoring
