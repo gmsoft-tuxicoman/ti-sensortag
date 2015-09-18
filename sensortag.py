@@ -1,5 +1,6 @@
-#!/usr/bin/python3
+#!/usr/bin/python2
 
+import rrdtool
 import argparse
 import sys, os
 
@@ -12,7 +13,8 @@ import threading
 
 argparser = argparse.ArgumentParser(description="Monitor the TI sensortag")
 argparser.add_argument('--dev', '-d', dest='dev_addr', help="Device address", required=True)
-argparser.add_argument('-interval', '-i', dest='interval', help='Polling interval in seconds', type=int, default=300)
+argparser.add_argument('--interval', '-i', dest='interval', help='Polling interval in seconds', type=int, default=120)
+argparser.add_argument('--rrd', '-r', dest='rrd', help='RRD file', default='sensortag.rrd')
 args = argparser.parse_args()
 
 dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
@@ -23,6 +25,38 @@ devices = {}
 dev_path = ''
 dev_char = {}
 
+
+def sensor_rrd_create():
+	steps = args.interval # 2 minute steps
+	heartbeat = 2 # 2 steps heartbeat
+
+	rrd_heartbeat = str(steps * heartbeat)
+	sources = [
+		[ "temp", -40, 125 ],
+		[ "humidity", 0 , 100],
+		[ "lux", 0, 83000 ]
+	]
+	periods = [
+		[ 2 * 60, 48 ], # 2 min resolution for 48 hours
+		[ 20 * 60, 24 * 31 ], # 20 min resultion for one month
+		[ 60 * 60, 24 * 365 * 5 ] # one hour resolution for 5 years
+	]
+
+	rra = [ "MIN", "MAX", "AVERAGE", "LAST" ]
+
+	rrd_src = []
+	for s in sources:
+		rrd_src.append("DS:" + s[0] + ":GAUGE:" + rrd_heartbeat + ":" + str(s[1]) + ":" + str(s[2]))
+
+	rrd_rra = []
+	for p in periods:
+		s = int(p[0] / steps)
+		rows = int(p[1] * 60 * 60 / steps)
+		for r in rra:
+			rrd_rra.append("RRA:" + r + ":0.5:" + str(s) + ":" + str(rows))
+
+	print("Creating " + args.rrd + " with " + str(steps) + " seconds steps")
+	rrdtool.create(args.rrd, '--step', str(steps), rrd_src, rrd_rra)
 
 
 def monitor():
@@ -48,6 +82,9 @@ def sensor_humidity_temp_read(uuid):
 	humidityRaw -= humidityRaw % 4
 	humidity = 100.0/65536 * float(humidityRaw)
 	print("Humidity : " + str(humidity) + "%")
+	rrd_update = [args.rrd, '-t', 'temp:humidity', 'N:' + str(temp) + ':' + str(humidity) ]
+	print(rrd_update)
+	rrdtool.update(rrd_update)
 
 def sensor_luxometer_read(uuid):
 	proxy = dev_char[uuid]['proxy']
@@ -57,6 +94,9 @@ def sensor_luxometer_read(uuid):
 	e = (lightRaw & 0xF000) >> 12
 	lux = m * (0.01 * pow(2.0,e))
 	print("Luxometer : " + str(lux) + " lux")
+	rrd_update = [args.rrd, '-t', 'lux', 'N:' + str(lux)]
+	print(rrd_update)
+	rrdtool.update(rrd_update)
 
 sensors = {}
 sensors['humidity_temp'] = {
@@ -76,6 +116,10 @@ sensors['luxometer'] = {
 	'read_func' : sensor_luxometer_read }
 
 def sensors_init():
+
+	poll_period = args.interval * 100
+	if poll_period > 255:
+		poll_period = 255
 
 	sensors_configured = 0
 	while sensors_configured < len(sensors):
@@ -108,19 +152,17 @@ def sensors_init():
 				sensor['enabled'] = val
 
 
-				# Give some time to the firmware to fetch the new value
-				time.sleep(1)
 				print("Sensor " + sensor['name'] + " configured")
 				if sensor['monitor']:
 					# Update period
 					period_uuid = sensor['period_uuid']
 					period_proxy = dev_char[period_uuid]['proxy']
-					period = args.interval * 100
-					if (period > 255):
-						period = 255
-					print("Updating polling period to " + str(period) + " for " + sensor['name'] + " sensor")
-					period_proxy.WriteValue([period])
+					print("Updating polling period to " + str(poll_period) + " for " + sensor['name'] + " sensor")
+					period_proxy.WriteValue([poll_period])
 				sensors_configured += 1
+
+	# Wait one period for the firmware to fetch all values
+	time.sleep(int(poll_period / 100) + 1)
 
 	# Start monitoring
 	print("All sensors configured, starting monitoring ...")
@@ -242,6 +284,10 @@ def sig_properties_changed(interface, changed, invalidated, path):
 
 
 def main():
+
+	if not os.path.isfile(args.rrd):
+		sensor_rrd_create()
+
 	global obj_mgr
 	obj_mgr = dbus.Interface(bus.get_object("org.bluez", "/"), 'org.freedesktop.DBus.ObjectManager')
 
