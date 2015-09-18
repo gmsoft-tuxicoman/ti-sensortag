@@ -14,7 +14,7 @@ import threading
 argparser = argparse.ArgumentParser(description="Monitor the TI sensortag")
 argparser.add_argument('--dev', '-d', dest='dev_addr', help="Device address", required=True)
 argparser.add_argument('--interval', '-i', dest='interval', help='Polling interval in seconds', type=int, default=120)
-argparser.add_argument('--rrd', '-r', dest='rrd', help='RRD file', default='sensortag.rrd')
+argparser.add_argument('--rrd', '-r', dest='rrd', help='RRD file', default='sensortag_<mac>.rrd')
 args = argparser.parse_args()
 
 dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
@@ -24,6 +24,9 @@ adapt = {}
 devices = {}
 dev_path = ''
 dev_char = {}
+
+rrd_file = ""
+rrd_values = { 'temp': 0, 'humidity': 0, 'lux': 0}
 
 
 def sensor_rrd_create():
@@ -55,8 +58,8 @@ def sensor_rrd_create():
 		for r in rra:
 			rrd_rra.append("RRA:" + r + ":0.5:" + str(s) + ":" + str(rows))
 
-	print("Creating " + args.rrd + " with " + str(steps) + " seconds steps")
-	rrdtool.create(args.rrd, '--step', str(steps), rrd_src, rrd_rra)
+	print("Creating " + rrd_file + " with " + str(steps) + " seconds steps")
+	rrdtool.create(rrd_file, '--step', str(steps), rrd_src, rrd_rra)
 
 
 def monitor():
@@ -71,6 +74,16 @@ def monitor():
 		# Read the value
 		sensor['read_func'](sensor['data_uuid'])
 
+	tpl = ""
+	values = "N:"
+	for v in rrd_values:
+		tpl = tpl + v + ":"
+		values = values + str(rrd_values[v]) + ":"
+
+	rrd_update = [rrd_file, '-t', tpl[:-1] , values[:-1] ]
+	print(rrd_update)
+	rrdtool.update(rrd_update)
+
 def sensor_humidity_temp_read(uuid):
 	proxy = dev_char[uuid]['proxy']
 	val = proxy.ReadValue()
@@ -82,9 +95,8 @@ def sensor_humidity_temp_read(uuid):
 	humidityRaw -= humidityRaw % 4
 	humidity = 100.0/65536 * float(humidityRaw)
 	print("Humidity : " + str(humidity) + "%")
-	rrd_update = [args.rrd, '-t', 'temp:humidity', 'N:' + str(temp) + ':' + str(humidity) ]
-	print(rrd_update)
-	rrdtool.update(rrd_update)
+	rrd_values['temp'] = temp
+	rrd_values['humidity'] = humidity
 
 def sensor_luxometer_read(uuid):
 	proxy = dev_char[uuid]['proxy']
@@ -94,9 +106,7 @@ def sensor_luxometer_read(uuid):
 	e = (lightRaw & 0xF000) >> 12
 	lux = m * (0.01 * pow(2.0,e))
 	print("Luxometer : " + str(lux) + " lux")
-	rrd_update = [args.rrd, '-t', 'lux', 'N:' + str(lux)]
-	print(rrd_update)
-	rrdtool.update(rrd_update)
+	rrd_values['lux'] = lux
 
 sensors = {}
 sensors['humidity_temp'] = {
@@ -285,7 +295,10 @@ def sig_properties_changed(interface, changed, invalidated, path):
 
 def main():
 
-	if not os.path.isfile(args.rrd):
+	global rrd_file
+	rrd_file = args.rrd.replace('<mac>', args.dev_addr)
+
+	if not os.path.isfile(rrd_file):
 		sensor_rrd_create()
 
 	global obj_mgr
