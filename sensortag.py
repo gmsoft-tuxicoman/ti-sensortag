@@ -66,13 +66,31 @@ def monitor():
 
 	threading.Timer(args.interval, monitor).start()
 
+	# Enable the sensors
 	for s in sensors:
 		sensor = sensors[s]
-
 		if not sensor['monitor']:
 			continue
-		# Read the value
+		config_proxy = dev_char[sensor['config_uuid']]['proxy']
+		config_proxy.WriteValue([1])
+
+	# Sleep until the values are updated
+	time.sleep(1)
+
+	# Read the values
+	for s in sensors:
+		sensor = sensors[s]
+		if not sensor['monitor']:
+			continue
 		sensor['read_func'](sensor['data_uuid'])
+
+	# Disable the sensors
+	for s in sensors:
+		sensor = sensors[s]
+		if not sensor['monitor']:
+			continue
+		config_proxy = dev_char[sensor['config_uuid']]['proxy']
+		config_proxy.WriteValue([1])
 
 	tpl = ""
 	values = "N:"
@@ -127,52 +145,36 @@ sensors['luxometer'] = {
 
 def sensors_init():
 
-	poll_period = args.interval * 100
-	if poll_period > 255:
-		poll_period = 255
-
 	sensors_configured = 0
 	while sensors_configured < len(sensors):
 		for s in sensors:
 			sensor = sensors[s]
 
+
+			if not sensor['monitor']:
+				continue
+
+			if not 'configured' in sensor:
+				sensor['configured'] = False
+
+			if sensor['configured']:
+				continue
+
 			config_proxy = dev_char[sensor['config_uuid']]['proxy']
-			if not 'enabled' in sensor:
-				# Fetch the state of the sensor
-				try:
-					val = config_proxy.ReadValue()
-				except dbus.exceptions.DBusException as e:
-					print("Unable to read sensor config : " + str(e))
-					time.sleep(1)
-					continue
-				if val[0] > 0:
-					sensor['enabled'] = True
-				else:
-					sensor['enabled'] = False
+			# Update period to 800ms
+			period_uuid = sensor['period_uuid']
+			period_proxy = dev_char[period_uuid]['proxy']
+			poll_period = 800 / 10
+			try:
+				period_proxy.WriteValue([poll_period])
+			except dbus.exceptions.DBusException as e:
+				print("Unable to write sensor config : " + str(e))
+				time.sleep(1)
+				continue
+			print("Updated polling period to " + str(poll_period * 10) + "ms for " + sensor['name'] + " sensor")
+			sensor['configured'] = True
+			sensors_configured += 1
 
-			if sensor['monitor'] != sensor['enabled']:
-				# Make sure the sensor is enabled/disabled
-				if sensor['monitor']:
-					print("Enabling " + sensor['name'] + " sensor")
-					val = True
-				else:
-					print("Disabling " + sensor['name'] + " sensor")
-					val = False
-				config_proxy.WriteValue([val])
-				sensor['enabled'] = val
-
-
-				print("Sensor " + sensor['name'] + " configured")
-				if sensor['monitor']:
-					# Update period
-					period_uuid = sensor['period_uuid']
-					period_proxy = dev_char[period_uuid]['proxy']
-					print("Updating polling period to " + str(poll_period) + " for " + sensor['name'] + " sensor")
-					period_proxy.WriteValue([poll_period])
-				sensors_configured += 1
-
-	# Wait one period for the firmware to fetch all values
-	time.sleep(int(poll_period / 100) + 1)
 
 	# Start monitoring
 	print("All sensors configured, starting monitoring ...")
