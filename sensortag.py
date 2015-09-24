@@ -290,9 +290,6 @@ def sig_properties_changed(interface, changed, invalidated, path):
 
 		elif prop == 'Name':
 			print("Connected to " + changed[prop])
-		elif prop == 'GattServices':
-			dev_char_update(obj_mgr.GetManagedObjects())
-
 
 
 def main():
