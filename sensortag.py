@@ -54,11 +54,11 @@ def sensor_rrd_create():
 	rrd_rra = []
 	for p in periods:
 		s = int(p[0] / steps)
-		rows = int(p[1] * 60 * 60 / steps)
+		rows = int(p[1] * 60 * 60 / steps / s)
 		for r in rra:
 			rrd_rra.append("RRA:" + r + ":0.5:" + str(s) + ":" + str(rows))
 
-	print("Creating " + rrd_file + " with " + str(steps) + " seconds steps")
+	print("Creating " + rrd_file + " with " + str(steps) + " seconds steps and RRA " + str(rrd_rra))
 	rrdtool.create(rrd_file, '--step', str(steps), rrd_src, rrd_rra)
 
 
