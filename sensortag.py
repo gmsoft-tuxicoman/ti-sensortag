@@ -260,6 +260,8 @@ def dev_char_update(objs):
 	sensors_init()
 
 def sig_interface_added(path, interface):
+	if len(dev_path) > 0:
+		return
 	find_devices()
 
 def sig_properties_changed(interface, changed, invalidated, path):
