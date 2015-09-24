@@ -278,6 +278,9 @@ def sig_properties_changed(interface, changed, invalidated, path):
 	if interface != 'org.bluez.Device1':
 		return
 
+	if path != dev_path:
+		return
+
 	print(str(interface) + " " + str(changed) + " " + str(invalidated) + " " + str(path))
 
 	for prop in changed:
