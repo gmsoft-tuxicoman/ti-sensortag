@@ -21,7 +21,6 @@ dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
 bus = dbus.SystemBus()
 
 adapt = {}
-devices = {}
 dev_path = ''
 dev_char = {}
 
@@ -202,13 +201,7 @@ def find_devices():
 			# This is not a device
 			continue
 
-		if obj_path in devices:
-			# We already know about that device
-			continue
-
 		addr = obj['org.bluez.Device1']['Address']
-		print("Found device " + obj_path + " with addess " + addr)
-		devices[obj_path] = obj['org.bluez.Device1']
 		if addr != args.dev_addr:
 			# This is no the droid^Wdevice we are looking for
 			continue
@@ -269,11 +262,6 @@ def dev_char_update(objs):
 def sig_interface_added(path, interface):
 	find_devices()
 
-def sig_interface_removed(path, interface):
-	if path in devices:
-		print ("Device " + path + " gone")
-		del devices[path]
-
 def sig_properties_changed(interface, changed, invalidated, path):
 	if interface != 'org.bluez.Device1':
 		return
@@ -324,12 +312,12 @@ def main():
 	# Setup the sig handler
 
 	bus.add_signal_receiver(sig_interface_added, dbus_interface='org.freedesktop.DBus.ObjectManager', signal_name = "InterfacesAdded")
-	bus.add_signal_receiver(sig_interface_removed, dbus_interface='org.freedesktop.DBus.ObjectManager', signal_name = "InterfacesRemoved")
 	bus.add_signal_receiver(sig_properties_changed, dbus_interface='org.freedesktop.DBus.Properties', signal_name = "PropertiesChanged", arg0 = "org.bluez.Device1", path_keyword = "path")
 
 	global adapt
 	adapt = dbus.Interface(bus.get_object("org.bluez", adapt_path), "org.bluez.Adapter1")
 
+	print("Starting device discovery ...")
 	adapt.StartDiscovery()
 	find_devices()
 
