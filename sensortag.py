@@ -73,9 +73,6 @@ def monitor():
 		config_proxy = dev_char[sensor['config_uuid']]['proxy']
 		config_proxy.WriteValue([1])
 
-	# Sleep until the values are updated
-	time.sleep(1)
-
 	# Read the values
 	for s in sensors:
 		sensor = sensors[s]
@@ -98,7 +95,7 @@ def monitor():
 		values = values + str(rrd_values[v]) + ":"
 
 	rrd_update = [rrd_file, '-t', tpl[:-1] , values[:-1] ]
-	print(rrd_update)
+	print("Updating RRD : " + str(rrd_update))
 	rrdtool.update(rrd_update)
 
 def sensor_humidity_temp_read(uuid):
@@ -106,7 +103,7 @@ def sensor_humidity_temp_read(uuid):
 	val = proxy.ReadValue()
 	tempRaw = val[0] + (val[1] << 8)
 	temp = -40.0 + 165.0/65536 * float(tempRaw)
-	print("Temperature : " + str(temp))
+	print("Temperature : " + str(temp) + "C")
 
 	humidityRaw = val[2] + (val[3] << 8)
 	humidityRaw -= humidityRaw % 4
@@ -142,6 +139,28 @@ sensors['luxometer'] = {
 	'data_uuid' : 'f000aa71-0451-4000-b000-000000000000',
 	'read_func' : sensor_luxometer_read }
 
+
+def ccs_notify_handler():
+
+	# Give some time for the firmware to update its value
+	time.sleep(2)
+
+	ccsr_uuid = 'f000ccc1-0451-4000-b000-000000000000'
+	ccsr_proxy = dev_char[ccsr_uuid]['proxy']
+	val = ccsr_proxy.ReadValue()
+
+	interval = val[0] + (val[1] << 8) * 1.25
+	latency = val[2] + (val[3] << 8)
+	timeout = val[4] + (val[5] << 8) * 10
+
+	print("Connection parameters updated : Interval/Latency/Timeout : " + str(interval) + "ms/" + str(latency) + "/" + str(timeout) + "ms")
+
+	print("Monitoring started !")
+	monitor()
+
+def ccs_notify_error(error):
+	print("Error while starting notification for the connection control service : " + str(error))
+
 def sensors_init():
 
 	sensors_configured = 0
@@ -174,10 +193,28 @@ def sensors_init():
 			sensor['configured'] = True
 			sensors_configured += 1
 
+	# Now configure the connection parameters
+	print("All sensors configured, updating the connection parameters...")
 
-	# Start monitoring
-	print("All sensors configured, starting monitoring ...")
-	monitor()
+	# Setup the notification
+	ccsr_uuid = 'f000ccc1-0451-4000-b000-000000000000'
+	ccsr_proxy = dev_char[ccsr_uuid]['proxy']
+	ccsr_proxy.StartNotify(reply_handler=ccs_notify_handler, error_handler=ccs_notify_error, dbus_interface='org.bluez.GattCharacteristic1')
+
+	# Write the new value
+	ccsw_uuid = 'f000ccc2-0451-4000-b000-000000000000'
+	ccsw_proxy = dev_char[ccsw_uuid]['proxy']
+	min_interval = 800 # min 800 ms
+	max_interval = 1000 # max 1s
+	timeout = 30000 # 30 sec timeout
+	latency = 10 # 10 period latency
+
+	min_interval = int(min_interval / 1.25)
+	max_interval = int(max_interval / 1.25)
+	timeout = int(timeout / 10)
+	val = [ min_interval & 0xFF, min_interval >> 8, max_interval & 0xFF, max_interval >> 8, latency & 0xFF, latency >> 8, timeout & 0xFF, timeout >> 8 ]
+	ccsw_proxy.WriteValue(val)
+
 
 def find_adapters():
 
@@ -226,9 +263,10 @@ def dev_connect():
 
 def dev_disconnect():
 	if len(dev_path) > 0:
-		print("Disconnecting from " + dev_path)
+		print("Disconnecting from " + dev_path + " ...")
 		dev = dbus.Interface(bus.get_object("org.bluez", dev_path), 'org.bluez.Device1')
 		dev.Disconnect()
+		print("Disconnected !")
 
 def dev_connected(path):
 	print("Connected !")
@@ -271,7 +309,7 @@ def sig_properties_changed(interface, changed, invalidated, path):
 	if path != dev_path:
 		return
 
-	print(str(interface) + " " + str(changed) + " " + str(invalidated) + " " + str(path))
+	#print(str(interface) + " " + str(changed) + " " + str(invalidated) + " " + str(path))
 
 	for prop in changed:
 		if prop == 'Connected':
