@@ -103,12 +103,12 @@ def sensor_humidity_temp_read(uuid):
 	val = proxy.ReadValue()
 	tempRaw = val[0] + (val[1] << 8)
 	temp = -40.0 + 165.0/65536 * float(tempRaw)
-	print("Temperature : " + str(temp) + "C")
+	print("Temperature : " + str("{0:.2f}".format(temp)) + " C")
 
 	humidityRaw = val[2] + (val[3] << 8)
 	humidityRaw -= humidityRaw % 4
 	humidity = 100.0/65536 * float(humidityRaw)
-	print("Humidity : " + str(humidity) + "%")
+	print("Humidity : " + str("{0:.2f}".format(humidity)) + " %")
 	rrd_values['temp'] = temp
 	rrd_values['humidity'] = humidity
 
@@ -119,7 +119,7 @@ def sensor_luxometer_read(uuid):
 	m = lightRaw & 0x0FFF
 	e = (lightRaw & 0xF000) >> 12
 	lux = m * (0.01 * pow(2.0,e))
-	print("Luxometer : " + str(lux) + " lux")
+	print("Luxometer : " + str("{0:.2f}".format(lux)) + " lux")
 	rrd_values['lux'] = lux
 
 sensors = {}
