@@ -27,6 +27,8 @@ dev_char = {}
 rrd_file = ""
 rrd_values = { 'temp': 0, 'humidity': 0, 'lux': 0}
 
+monitor_running = False
+
 
 def sensor_rrd_create():
 	steps = args.interval # 2 minute steps
@@ -156,6 +158,13 @@ def ccs_notify_handler():
 	print("Connection parameters updated : Interval/Latency/Timeout : " + str(interval) + "ms/" + str(latency) + "/" + str(timeout) + "ms")
 
 	print("Monitoring started !")
+
+
+	global monitor_running
+	if not monitor_running:
+		monitor_running = True
+	else:
+		return
 	monitor()
 
 def ccs_notify_error(error):
@@ -295,6 +304,9 @@ def dev_char_update(objs):
 		dev_char[uuid]['path'] = obj_path
 		dev_char[uuid]['proxy'] = dbus.Interface(bus.get_object("org.bluez", obj_path), 'org.bluez.GattCharacteristic1')
 
+	if len(dev_char) == 0:
+		return
+
 	sensors_init()
 
 def sig_interface_added(path, interface):
@@ -318,6 +330,10 @@ def sig_properties_changed(interface, changed, invalidated, path):
 				dev_char_update(obj_mgr.GetManagedObjects())
 			else:
 				print("Disconnected !")
+				# Mark all sensors as not configured
+				for s in sensors:
+					sensor = sensors[s]
+					sensor['configured'] = False
 
 		elif prop == 'Name':
 			print("Connected to " + changed[prop])
