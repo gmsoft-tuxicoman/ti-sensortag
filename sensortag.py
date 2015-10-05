@@ -15,13 +15,15 @@ argparser = argparse.ArgumentParser(description="Monitor the TI sensortag")
 argparser.add_argument('--dev', '-d', dest='dev_addr', help="Device address", required=True)
 argparser.add_argument('--interval', '-i', dest='interval', help='Polling interval in seconds', type=int, default=120)
 argparser.add_argument('--rrd', '-r', dest='rrd', help='RRD file', default='sensortag_<mac>.rrd')
+argparser.add_argument('--adapter', '-a', dest='adapter', help='Bluetooth adapter to use', default='hci0')
 args = argparser.parse_args()
 
 dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
 bus = dbus.SystemBus()
 
+adapt_path = None
 adapt = {}
-dev_path = ''
+dev_path = None
 dev_char = {}
 
 rrd_file = ""
@@ -246,6 +248,10 @@ def find_devices():
 		if not 'org.bluez.Device1' in obj:
 			# This is not a device
 			continue
+		global adapt_path
+		if not obj_path.startswith(adapt_path):
+			# The device is not on the right adapter
+			continue
 
 		addr = obj['org.bluez.Device1']['Address']
 		if addr != args.dev_addr:
@@ -310,7 +316,7 @@ def dev_char_update(objs):
 	sensors_init()
 
 def sig_interface_added(path, interface):
-	if len(dev_path) > 0:
+	if dev_path:
 		return
 	find_devices()
 
@@ -350,13 +356,20 @@ def main():
 	global obj_mgr
 	obj_mgr = dbus.Interface(bus.get_object("org.bluez", "/"), 'org.freedesktop.DBus.ObjectManager')
 
+	global adapt_path
+	adapt_path = None
+	adapt_obj = None
+
 	adapts = find_adapters()
 	for a in adapts:
 		print("Found adapter " + a + " with address " +  adapts[a]['Address'])
+		if a.endswith(args.adapter):
+			adapt_path = a
+			adapt_obj = adapts[a]
 
-
-	# For now use the first adapter
-	adapt_path, adapt_obj  = adapts.popitem()
+	if not adapt_path:
+		print("Adapter " + args.adapter + " not found")
+		return
 
 	# Power it on
 	if not adapt_obj['Powered']:
