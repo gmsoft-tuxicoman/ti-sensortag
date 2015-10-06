@@ -261,7 +261,10 @@ def find_devices():
 		global dev_path
 		dev_path = obj_path
 
-		adapt.StopDiscovery()
+		try:
+			adapt.StopDiscovery()
+		except:
+			pass
 
 		if not obj['org.bluez.Device1']['Connected']:
 			dev_connect()
@@ -327,7 +330,7 @@ def sig_properties_changed(interface, changed, invalidated, path):
 	if path != dev_path:
 		return
 
-	#print(str(interface) + " " + str(changed) + " " + str(invalidated) + " " + str(path))
+	print(str(interface) + " " + str(changed) + " " + str(invalidated) + " " + str(path))
 
 	for prop in changed:
 		if prop == 'Connected':
@@ -343,6 +346,9 @@ def sig_properties_changed(interface, changed, invalidated, path):
 
 		elif prop == 'Name':
 			print("Connected to " + changed[prop])
+
+		elif prop == 'GattServices':
+			dev_char_update(obj_mgr.GetManagedObjects())
 
 
 def main():
@@ -386,9 +392,13 @@ def main():
 	global adapt
 	adapt = dbus.Interface(bus.get_object("org.bluez", adapt_path), "org.bluez.Adapter1")
 
-	print("Starting device discovery ...")
-	adapt.StartDiscovery()
+	global dev_path
 	find_devices()
+
+
+	if not dev_path:
+		print("Starting device discovery ...")
+		adapt.StartDiscovery()
 
 	mainloop = GObject.MainLoop()
 	mainloop.run()
