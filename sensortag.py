@@ -218,7 +218,7 @@ def sensors_init():
 	min_interval = 800 # min 800 ms
 	max_interval = 1000 # max 1s
 	timeout = 30000 # 30 sec timeout
-	latency = 10 # 10 period latency
+	latency = 9 # 9 period latency
 
 	min_interval = int(min_interval / 1.25)
 	max_interval = int(max_interval / 1.25)
