@@ -13,7 +13,7 @@ import threading
 
 argparser = argparse.ArgumentParser(description="Monitor the TI sensortag")
 argparser.add_argument('--dev', '-d', dest='dev_addr', help="Device address", required=True)
-argparser.add_argument('--interval', '-i', dest='interval', help='Polling interval in seconds', type=int, default=120)
+argparser.add_argument('--interval', '-i', dest='interval', help='Polling interval in seconds for RRD creation', type=int, default=120)
 argparser.add_argument('--rrd', '-r', dest='rrd', help='RRD file', default='sensortag_<mac>.rrd')
 argparser.add_argument('--adapter', '-a', dest='adapter', help='Bluetooth adapter to use', default='hci0')
 argparser.add_argument('--latency', '-l', dest='latency', help='BLE connection latency', type=int, default=9)
@@ -29,6 +29,7 @@ dev_char = {}
 
 rrd_file = ""
 rrd_values = { 'temp': 0, 'humidity': 0, 'lux': 0}
+rrd_step = 0
 
 monitor_running = False
 
@@ -68,7 +69,7 @@ def sensor_rrd_create():
 
 def monitor():
 
-	threading.Timer(args.interval, monitor).start()
+	threading.Timer(rrd_step, monitor).start()
 
 	# Enable the sensors
 	for s in sensors:
@@ -267,6 +268,7 @@ def find_devices():
 		except:
 			pass
 
+		print (obj['org.bluez.Device1'])
 		if not obj['org.bluez.Device1']['Connected']:
 			dev_connect()
 		else:
@@ -359,6 +361,11 @@ def main():
 
 	if not os.path.isfile(rrd_file):
 		sensor_rrd_create()
+
+	rrd_info = rrdtool.info(rrd_file)
+	global rrd_step
+	rrd_step = rrd_info['step']
+
 
 	global obj_mgr
 	obj_mgr = dbus.Interface(bus.get_object("org.bluez", "/"), 'org.freedesktop.DBus.ObjectManager')
