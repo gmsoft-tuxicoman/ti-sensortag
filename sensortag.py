@@ -16,6 +16,7 @@ argparser.add_argument('--dev', '-d', dest='dev_addr', help="Device address", re
 argparser.add_argument('--interval', '-i', dest='interval', help='Polling interval in seconds', type=int, default=120)
 argparser.add_argument('--rrd', '-r', dest='rrd', help='RRD file', default='sensortag_<mac>.rrd')
 argparser.add_argument('--adapter', '-a', dest='adapter', help='Bluetooth adapter to use', default='hci0')
+argparser.add_argument('--latency', '-l', dest='latency', help='BLE connection latency', type=int, default=9)
 args = argparser.parse_args()
 
 dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
@@ -218,7 +219,7 @@ def sensors_init():
 	min_interval = 800 # min 800 ms
 	max_interval = 1000 # max 1s
 	timeout = 30000 # 30 sec timeout
-	latency = 9 # 9 period latency
+	latency = args.latency
 
 	min_interval = int(min_interval / 1.25)
 	max_interval = int(max_interval / 1.25)
