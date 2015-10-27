@@ -28,7 +28,7 @@ dev_path = None
 dev_char = {}
 
 rrd_file = ""
-rrd_values = { 'temp': 0, 'humidity': 0, 'lux': 0}
+rrd_values = { }
 rrd_step = 0
 
 monitor_running = False
@@ -40,9 +40,12 @@ def sensor_rrd_create():
 
 	rrd_heartbeat = str(steps * heartbeat)
 	sources = [
-		[ "temp", -40, 125 ],
+		[ "temp_h", -40, 125 ],
 		[ "humidity", 0 , 100],
-		[ "lux", 0, 83000 ]
+		[ "lux", 0, 83000 ],
+		[ "temp_p", -40, 85 ],
+		[ "pressure", 300, 1100 ]
+
 	]
 	periods = [
 		[ 2 * 60, 48 ], # 2 min resolution for 48 hours
@@ -109,13 +112,13 @@ def sensor_humidity_temp_read(uuid):
 	val = proxy.ReadValue()
 	tempRaw = val[0] + (val[1] << 8)
 	temp = -40.0 + 165.0/65536 * float(tempRaw)
-	print("Temperature : " + str("{0:.2f}".format(temp)) + " C")
+	print("Temperature (humidity sensor) : " + str("{0:.2f}".format(temp)) + " C")
 
 	humidityRaw = val[2] + (val[3] << 8)
 	humidityRaw -= humidityRaw % 4
 	humidity = 100.0/65536 * float(humidityRaw)
 	print("Humidity : " + str("{0:.2f}".format(humidity)) + " %")
-	rrd_values['temp'] = temp
+	rrd_values['temp_h'] = temp
 	rrd_values['humidity'] = humidity
 
 def sensor_luxometer_read(uuid):
@@ -127,6 +130,20 @@ def sensor_luxometer_read(uuid):
 	lux = m * (0.01 * pow(2.0,e))
 	print("Luxometer : " + str("{0:.2f}".format(lux)) + " lux")
 	rrd_values['lux'] = lux
+
+def sensor_pressure_temp_read(uuid):
+	proxy = dev_char[uuid]['proxy']
+	val = proxy.ReadValue()
+
+	tempRaw = val[0] + (val[1] << 8) + (val[2] << 16)
+	temp = float(tempRaw) / 100.0
+	print("Temperature (pressure sensor) : " + str("{0:.2f}".format(temp)) + " C")
+
+	pressureRaw = val[3] + (val[4] << 8) + (val[5] << 16)
+	pressure = float(pressureRaw) / 100.0
+	print("Pressure : " + str("{0:.2f}".format(pressure) + " hPa"))
+	rrd_values['temp_p'] = temp
+	rrd_values['pressure'] = pressure
 
 sensors = {}
 sensors['humidity_temp'] = {
@@ -145,6 +162,13 @@ sensors['luxometer'] = {
 	'data_uuid' : 'f000aa71-0451-4000-b000-000000000000',
 	'read_func' : sensor_luxometer_read }
 
+sensors['pressure_temp'] = {
+	'name' : 'pressure/temperature',
+	'monitor': True,
+	'period_uuid' : 'f000aa44-0451-4000-b000-000000000000',
+	'config_uuid': 'f000aa42-0451-4000-b000-000000000000',
+	'data_uuid' : 'f000aa41-0451-4000-b000-000000000000',
+	'read_func' : sensor_pressure_temp_read }
 
 def ccs_notify_handler():
 
